@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-// Not: Android Emülatör için localhost adresi 10.0.2.2'dir.
-// Gerçek cihaz testi için bilgisayarının yerel IP adresini yazabilirsin.
-const String baseUrl = "http://10.0.2.2:8081";
+// Yerel ağ IP adresimiz üzerinden FastAPI sunucusuna bağlanıyoruz
+const String baseUrl = "http://192.168.1.109:8081";
 
 void main() {
   runApp(const HemenKuryeApp());
@@ -88,15 +87,12 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
 
   Future<void> _kayitOl() async {
     try {
-      // Not: Flutter'da ilk aşamada multipart dosya gönderimi için HTTP MultipartRequest kullanılır.
-      // Şimdilik hızlıca test/altyapı için temel alanları bağlıyoruz.
       var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/kurye/register'));
       request.fields['name'] = regNameController.text.trim();
       request.fields['email'] = regEmailController.text.trim();
       request.fields['phone'] = regPhoneController.text.trim();
       request.fields['password'] = regPasswordController.text.trim();
       
-      // Test amaçlı boş bir byte alanı ekleyebiliriz veya dosya seçme eklenebilir
       request.files.add(http.MultipartFile.fromBytes(
         'profil_foto', 
         [0, 1, 2, 3], 
