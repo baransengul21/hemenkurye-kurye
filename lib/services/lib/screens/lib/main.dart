@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 
 void main() {
   runApp(const HemenKuryeApp());
@@ -18,7 +18,8 @@ class HemenKuryeApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         fontFamily: 'system-ui',
       ),
-      home: const HomeScreen(),
+      // Uygulama artık doğrudan Giriş Ekranı ile başlıyor
+      home: const LoginScreen(),
     );
   }
 }
