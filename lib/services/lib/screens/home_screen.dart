@@ -1,237 +1,133 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import '../services/api_service.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String _locationStatus = "Konum henüz alınmadı";
+  bool _isLoading = false;
+
+  // Gerçek GPS Konumunu Alma ve İzinleri Kontrol Etme Fonksiyonu
+  Future<void> _getCurrentLocationAndSend() async {
+    setState(() {
+      _isLoading = true;
+      _locationStatus = "Konum izinleri kontrol ediliyor...";
+    });
+
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 1. Cihazın konum servisi açık mı kontrol et
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() {
+        _locationStatus = "Lütfen telefonun konum (GPS) servisini açın.";
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // 2. Konum izin durumunu kontrol et
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _locationStatus = "Konum izni reddedildi.";
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() {
+        _locationStatus = "Konum izni kalıcı olarak reddedilmiş. Ayarlardan açmalısın.";
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // 3. İzinler tamamsa anlık gerçek koordinatı al
+    setState(() {
+      _locationStatus = "GPS uydularından konum alınıyor...";
+    });
+
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      setState(() {
+        _locationStatus = "Enlem: ${position.latitude}\nBoylam: ${position.longitude}\nBackend'e gönderiliyor...";
+      });
+
+      // 4. FastAPI Backend'e gerçek koordinatları gönder
+      // (Burada ApiService üzerinden backend endpoint'ine bağlanıyoruz)
+      bool success = await ApiService.sendLocation(position.latitude, position.longitude);
+
+      if (success) {
+        setState(() {
+          _locationStatus = "Enlem: ${position.latitude}\nBoylam: ${position.longitude}\n Başarıyla Backend'e iletildi!";
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _locationStatus = "Konum alındı ancak Backend'e gönderilemedi.";
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _locationStatus = "Hata oluştu: $e";
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFD32F2F),
-        elevation: 0,
-        title: const Text(
-          '🚨 HEMENKURYE',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: -1),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.support_agent, color: Colors.white),
-            onPressed: () {
-              // Canlı destek modal veya yönlendirmesi buraya gelecek
-            },
-          ),
-        ],
+        title: const Text("HemenKurye - Canlı Konum"),
+        backgroundColor: Colors.orange,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // İstatistik Kartları Üst Kısım
-            Row(
-              children: [
-                _buildStatCard('Aktif Kurye', '142', '● Bölgede', Colors.red),
-                const SizedBox(width: 12),
-                _buildStatCard('Ort. Teslim', '32 Dk', '⚡ Süper Hız', Colors.blue),
-                const SizedBox(width: 12),
-                _buildStatCard('Başarı', '%99.4', 'Güvenli', Colors.green),
-              ],
+            const Icon(
+              Icons.location_on,
+              size: 80,
+              color: Colors.orange,
             ),
-            const SizedBox(height: 20),
-
-            // Kurumsal Bilgilendirme Banner
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1F2937), Color(0xFF111827)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
+            const SizedBox(height: 24),
+            Text(
+              _locationStatus,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _getCurrentLocationAndSend,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'Kurumsal Avantaj',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'E-Ticaret Entegrasyonları Başladı',
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'API desteğiyle siparişleriniz doğrudan kurye ekibimize düşer.',
-                          style: TextStyle(color: Colors.white75, fontSize: 12),
-                        ),
-                      ],
+              child: _isLoading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text(
+                      "Konumu Al ve Siparişi Başlat",
+                      style: TextStyle(fontSize: 16, color: Colors.white),
                     ),
-                  ),
-                  const Text('📦', style: TextStyle(fontSize: 40)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Hizmet Sınıfı Seçimi Başlığı
-            const Text(
-              'Hizmet Sınıfı Seçin',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF4B5563)),
-            ),
-            const SizedBox(height: 12),
-
-            // Hizmet Kartları
-            _buildServiceCard(
-              context,
-              title: '🚀 Hızlı Ekspres (45 Dakika)',
-              description: 'En yakın saha kuryesi doğrudan adresinize yönlendirilir.',
-              badge: 'Öncelikli',
-              isHighlighted: true,
-              onTap: () {
-                // Yeni kurye çağır sayfasına servis türü ile yönlendir
-              },
-            ),
-            const SizedBox(height: 10),
-            _buildServiceCard(
-              context,
-              title: '⏱️ Standart Dağıtım (1-2 Saat)',
-              description: 'Esnek zamanlı ve bütçe dostu kurye seçeneği.',
-              badge: 'Standart',
-              isHighlighted: false,
-              onTap: () {},
-            ),
-            const SizedBox(height: 10),
-            _buildServiceCard(
-              context,
-              title: '📅 Ekonomik Planlı Dağıtım',
-              description: 'Gün içi toplanan paketleriniz toplu ve ekonomik ulaştırılır.',
-              badge: '%30 İndirimli',
-              isHighlighted: false,
-              onTap: () {},
-            ),
-            const SizedBox(height: 24),
-
-            // Aktif Sevkiyatlarım Başlığı
-            const Text(
-              'Aktif Sevkiyatlarım',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF4B5563)),
-            ),
-            const SizedBox(height: 12),
-
-            // Aktif Sevkiyat Liste Kutusu (Python backend'den çekilecek veriler için alan)
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: const Center(
-                child: Text(
-                  'Aktif sevkiyatınız bulunmuyor. Yeni kurye çağırarak başlayın.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // İstatistik Kartı Widget Yardımcısı
-  Widget _buildStatCard(String title, String value, String subtitle, Color subColor) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1F2937))),
-            const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(fontSize: 10, color: subColor, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Hizmet Kartı Widget Yardımcısı
-  Widget _buildServiceCard(BuildContext context, {required String title, required String description, required String badge, required bool isHighlighted, required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isHighlighted ? const Color(0xFFD32F2F) : const Color(0xFFE2E8F0),
-            width: isHighlighted ? 1.5 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.between,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1F2937))),
-                  const SizedBox(height: 4),
-                  Text(description, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: isHighlighted ? const Color(0xFFFFEBEE) : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                badge,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: isHighlighted ? const Color(0xFFD32F2F) : const Color(0xFF4B5563),
-                ),
-              ),
             ),
           ],
         ),
