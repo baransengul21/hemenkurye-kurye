@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'database_helper.dart'; // Yerel veritabanı bağlayıcımız
 
-// Yerel ağ IP adresimiz üzerinden FastAPI sunucusuna bağlanıyoruz
-const String baseUrl = "http://192.168.1.109:8081";
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseHelper.instance.database;
 
-void main() {
   runApp(const HemenKuryeApp());
 }
 
@@ -45,10 +44,6 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   final TextEditingController regEmailController = TextEditingController();
   final TextEditingController regPhoneController = TextEditingController();
   final TextEditingController regPasswordController = TextEditingController();
-  final TextEditingController regOtpController = TextEditingController();
-
-  bool isRegisteringStep2 = false;
-  String registeredEmail = "";
 
   @override
   void initState() {
@@ -56,102 +51,73 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     _tabController = TabController(length: 2, vsync: this);
   }
 
+  // YEREL GİRİŞ YAPMA
   Future<void> _girisYap() async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/kurye/login'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "email": loginEmailController.text.trim(),
-          "password": loginPasswordController.text.trim(),
-        }),
-      );
+    final email = loginEmailController.text.trim();
+    final password = loginPasswordController.text.trim();
 
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200) {
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Lütfen tüm alanları doldurun")),
+      );
+      return;
+    }
+
+    try {
+      final user = await DatabaseHelper.instance.loginUser(email, password);
+      if (user != null) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => HomeScreen(kuryeData: data["user"])),
+          MaterialPageRoute(builder: (context) => HomeScreen(kuryeData: user)),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["detail"] ?? "Giriş başarısız")),
+          const SnackBar(content: Text("E-posta veya şifre hatalı!")),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Bağlantı hatası: $e")),
+        SnackBar(content: Text("Giriş hatası: $e")),
       );
     }
   }
 
+  // YEREL KAYIT OLMA
   Future<void> _kayitOl() async {
-    try {
-      var request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/kurye/register'));
-      request.fields['name'] = regNameController.text.trim();
-      request.fields['email'] = regEmailController.text.trim();
-      request.fields['phone'] = regPhoneController.text.trim();
-      request.fields['password'] = regPasswordController.text.trim();
-      
-      request.files.add(http.MultipartFile.fromBytes(
-        'profil_foto', 
-        [0, 1, 2, 3], 
-        filename: 'profil.jpg'
-      ));
+    final name = regNameController.text.trim();
+    final email = regEmailController.text.trim();
+    final phone = regPhoneController.text.trim();
+    final password = regPasswordController.text.trim();
 
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-      var data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        setState(() {
-          registeredEmail = regEmailController.text.trim();
-          isRegisteringStep2 = true;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Kayıt başarılı! E-postanıza gelen kodu girin.")),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["detail"] ?? "Kayıt hatası")),
-        );
-      }
-    } catch (e) {
+    if (name.isEmpty || email.isEmpty || phone.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Hata: $e")),
+        const SnackBar(content: Text("Lütfen tüm alanları doldurun")),
       );
+      return;
     }
-  }
 
-  Future<void> _kodDogrula() async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/kurye/verify-email'),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "email": registeredEmail,
-          "otp_code": regOtpController.text.trim(),
-        }),
+      Map<String, dynamic> row = {
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'password': password,
+      };
+
+      await DatabaseHelper.instance.insertUser(row);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Kayıt başarılı! Şimdi giriş yapabilirsiniz.")),
       );
 
-      final data = jsonDecode(response.body);
-      if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Doğrulama başarılı! Giriş yapabilirsiniz.")),
-        );
-        setState(() {
-          isRegisteringStep2 = false;
-          _tabController.index = 0;
-          loginEmailController.text = registeredEmail;
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["detail"] ?? "Doğrulama başarısız")),
-        );
-      }
+      // Kayıttan sonra otomatik olarak giriş sekmesine at ve emaili yaz
+      setState(() {
+        _tabController.index = 0;
+        loginEmailController.text = email;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Hata: $e")),
+        SnackBar(content: Text("Kayıt hatası: $e")),
       );
     }
   }
@@ -180,7 +146,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F)),
                 ),
                 const SizedBox(height: 6),
-                const Text("Kurye Saha Operasyon Paneli", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const Text("Kurye Saha Operasyon Paneli (Offline)", style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 20),
                 TabBar(
                   controller: _tabController,
@@ -197,7 +163,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
-                  height: 320,
+                  height: 300,
                   child: TabBarView(
                     controller: _tabController,
                     children: [
@@ -226,50 +192,28 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                         ],
                       ),
                       // Kayıt Sekmesi
-                      isRegisteringStep2
-                          ? Column(
-                              children: [
-                                const Text("E-postaya gelen 6 haneli kodu girin:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 10),
-                                TextField(
-                                  controller: regOtpController,
-                                  textAlign: TextAlign.center,
-                                  maxLength: 6,
-                                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: "123456"),
-                                ),
-                                const SizedBox(height: 10),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
-                                    minimumSize: const Size.fromHeight(50),
-                                  ),
-                                  onPressed: _kodDogrula,
-                                  child: const Text("Kodu Doğrula", style: TextStyle(color: Colors.white)),
-                                ),
-                              ],
-                            )
-                          : SingleChildScrollView(
-                              child: Column(
-                                children: [
-                                  TextField(controller: regNameController, decoration: const InputDecoration(labelText: "Ad Soyad", isDense: true)),
-                                  const SizedBox(height: 8),
-                                  TextField(controller: regEmailController, decoration: const InputDecoration(labelText: "E-posta", isDense: true)),
-                                  const SizedBox(height: 8),
-                                  TextField(controller: regPhoneController, decoration: const InputDecoration(labelText: "Telefon", isDense: true)),
-                                  const SizedBox(height: 8),
-                                  TextField(controller: regPasswordController, obscureText: true, decoration: const InputDecoration(labelText: "Şifre", isDense: true)),
-                                  const SizedBox(height: 12),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFFD32F2F),
-                                      minimumSize: const Size.fromHeight(45),
-                                    ),
-                                    onPressed: _kayitOl,
-                                    child: const Text("Kayıt Ol", style: TextStyle(color: Colors.white)),
-                                  ),
-                                ],
+                      SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            TextField(controller: regNameController, decoration: const InputDecoration(labelText: "Ad Soyad", isDense: true)),
+                            const SizedBox(height: 8),
+                            TextField(controller: regEmailController, decoration: const InputDecoration(labelText: "E-posta", isDense: true)),
+                            const SizedBox(height: 8),
+                            TextField(controller: regPhoneController, decoration: const InputDecoration(labelText: "Telefon", isDense: true)),
+                            const SizedBox(height: 8),
+                            TextField(controller: regPasswordController, obscureText: true, decoration: const InputDecoration(labelText: "Şifre", isDense: true)),
+                            const SizedBox(height: 12),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFD32F2F),
+                                minimumSize: const Size.fromHeight(45),
                               ),
+                              onPressed: _kayitOl,
+                              child: const Text("Kayıt Ol", style: TextStyle(color: Colors.white)),
                             ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -283,69 +227,56 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
 }
 
 // --- ANA PANEL / SİPARİŞLER EKRANI ---
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   final Map<String, dynamic> kuryeData;
   const HomeScreen({Key? key, required this.kuryeData}) : super(key: key);
-
-  @override
-  _HomeScreenState createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  List siparisler = [];
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _siparisleriGetir();
-  }
-
-  Future<void> _siparisleriGetir() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/kurye/siparisler?kurye_email=${widget.kuryeData["email"]}'),
-      );
-      if (response.statusCode == 200) {
-        setState(() {
-          siparisler = jsonDecode(response.body);
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() => isLoading = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Hoş geldin, ${widget.kuryeData["name"]}"),
+        title: Text("Hoş geldin, ${kuryeData["name"]}"),
         backgroundColor: const Color(0xFFD32F2F),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const AuthScreen()),
+              );
+            },
+          )
+        ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : siparisler.isEmpty
-              ? const Center(child: Text("Atama bekleyen veya aktif sipariş bulunmuyor."))
-              : ListView.builder(
-                  itemCount: siparisler.length,
-                  itemBuilder: (context, index) {
-                    var s = siparisler[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.red[100],
-                          child: const Text("📦"),
-                        ),
-                        title: Text("Gönderi #${s["id"]} - ${s["tutar"]} ₺"),
-                        subtitle: Text("Alım: ${s["cikis_adres"]}\nVarış: ${s["alici_adres"]}\nDurum: ${s["durum"]}"),
-                        isThreeLine: true,
-                      ),
-                    );
-                  },
-                ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.offline_bolt, size: 80, color: Colors.green),
+              const SizedBox(height: 20),
+              const Text(
+                "Yerel Veritabanı ile Çevrimdışı Mod",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Kayıtlı E-posta: ${kuryeData["email"]}\nTelefon: ${kuryeData["phone"]}",
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 30),
+              const Text(
+                "Artık tablet üzerinde internete ihtiyaç duymadan verilerini güvenle saklayabilir ve giriş yapabilirsin!",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
