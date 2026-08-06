@@ -28,21 +28,17 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        email TEXT,
-        phone TEXT,
-        password TEXT
+        email TEXT NOT NULL,
+        password TEXT NOT NULL
       )
     ''');
   }
 
-  // Kayıt Olma Fonksiyonu
   Future<int> insertUser(Map<String, dynamic> row) async {
     final db = await instance.database;
     return await db.insert('users', row);
   }
 
-  // Giriş Yapma Fonksiyonu
   Future<Map<String, dynamic>?> loginUser(String email, String password) async {
     final db = await instance.database;
     final result = await db.query(
@@ -50,6 +46,7 @@ class DatabaseHelper {
       where: 'email = ? AND password = ?',
       whereArgs: [email, password],
     );
+
     if (result.isNotEmpty) {
       return result.first;
     }
